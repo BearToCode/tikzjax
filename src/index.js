@@ -1,11 +1,10 @@
 import { Worker, spawn, Thread } from 'threads';
-import localForage from "localforage";
 import md5 from 'md5';
 import workerCode from './../dist/run-tex-output.js';
 
 // document.currentScript polyfill
 if (document.currentScript === undefined) {
-	var scripts = document.getElementsByTagName('script');
+	var scripts = document.querySelectorAll('div[type="tikzjax"]');
 	document.currentScript = scripts[scripts.length - 1];
 }
 
@@ -20,7 +19,7 @@ async function processTikzScripts(scripts) {
 		async function loadCachedOrSetupLoader(elt) {
 			elt.md5hash = md5(JSON.stringify(elt.dataset) + elt.childNodes[0].nodeValue);
 
-			let savedSVG = await localForage.getItem(elt.md5hash);
+			let savedSVG = window.localStorage.getItem(elt.md5hash);
 
 			if (savedSVG) {
 				let svg = document.createRange().createContextualFragment(savedSVG).firstChild;
@@ -46,7 +45,7 @@ async function processTikzScripts(scripts) {
 			let loader = elt.loader;
 
 			// Check for a saved svg again in case this script tag is a duplicate of another.
-			let savedSVG = await localForage.getItem(elt.md5hash);
+			let savedSVG = window.localStorage.getItem(elt.md5hash);
 
 			if (savedSVG) {
 				let svg = document.createRange().createContextualFragment(savedSVG).firstChild;
@@ -89,7 +88,7 @@ async function processTikzScripts(scripts) {
 			loader.replaceWith(svg);
 
 			try {
-				await localForage.setItem(elt.md5hash, svg.outerHTML);
+				window.localStorage.setItem(elt.md5hash, svg.outerHTML);
 			} catch (err) {
 				console.log(err);
 			}
@@ -167,22 +166,18 @@ async function initializeWorker() {
 
 async function initialize() {
 	// Process any text/tikz scripts that are on the page initially.
-	processTikzScripts(Array.prototype.slice.call(document.getElementsByTagName('script')).filter(
-		(e) => (e.getAttribute('type') === 'text/tikz')
-	));
+	processTikzScripts(document.querySelectorAll('div[type="tikzjax"]'));
 
 	// If a text/tikz script is added to the page later, then process those.
 	observer = new MutationObserver((mutationsList, observer) => {
 		let newTikzScripts = [];
 		for (const mutation of mutationsList) {
 			for (const node of mutation.addedNodes) {
-				if (node.tagName && node.tagName.toLowerCase() == 'script' && node.type == "text/tikz")
+				if (node.tagName && node.tagName.toLowerCase() == 'div' && node.type == "tikzjax")
 					newTikzScripts.push(node);
-				else if (node.getElementsByTagName)
+				else if (node.querySelectorAll)
 					newTikzScripts.push.apply(newTikzScripts,
-						Array.prototype.slice.call(node.getElementsByTagName('script')).filter(
-							(e) => (e.getAttribute('type') === 'text/tikz')
-						)
+						node.querySelectorAll('div[type="tikzjax"]')
 					);
 			}
 		}
@@ -199,7 +194,6 @@ async function shutdown() {
 if (!window.TikzJax) {
 	window.TikzJax = true;
 
-	localForage.config({ name: 'TikzJax', storeName: 'svgImages' });
 	texWorker = initializeWorker();
 
 	if (document.readyState == 'complete') initialize();
